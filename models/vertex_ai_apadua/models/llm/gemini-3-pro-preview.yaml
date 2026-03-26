@@ -17,6 +17,7 @@ model_properties:
   context_size: 1048576
 parameter_rules:
   - name: temperature
+    use_template: temperature
     type: float
     required: true
     default: 1
