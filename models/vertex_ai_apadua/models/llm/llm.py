@@ -741,51 +741,6 @@ class VertexAiApaduaLargeLanguageModel(LargeLanguageModel):
                             is_thinking = False
                         assistant_prompt_message.content += part.text
 
-            # Extract grounding metadata if present
-            reference_lines = []
-            grounding_chunks = []
-            grounding_supports = []
-
-            try:
-                if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
-                    grounding_chunks = candidate.grounding_metadata.grounding_chunks or []
-                    grounding_supports = candidate.grounding_metadata.grounding_supports or []
-            except (AttributeError, TypeError):
-                pass
-
-            if grounding_chunks:
-                for gc in grounding_chunks:
-                    try:
-                        if hasattr(gc, 'web') and gc.web:
-                            title = getattr(gc.web, 'title', None)
-                            uri = getattr(gc.web, 'uri', None)
-                            if title and uri:
-                                reference_lines.append(f"<li><a href='{uri}'>{title}</a></li>")
-                    except (AttributeError, TypeError):
-                        continue
-
-            if grounding_supports:
-                # Sort supports by end_index in descending order to insert markers without affecting earlier offsets
-                sorted_supports = sorted(grounding_supports, key=lambda s: s.segment.end_index or 0, reverse=True)
-                for support in sorted_supports:
-                    if support.grounding_chunk_indices:
-                        # Create citation markers like [1, 2]
-                        indices = [str(i + 1) for i in support.grounding_chunk_indices]
-                        marker = f" [{', '.join(indices)}]"
-                        end_index = support.segment.end_index
-                        if end_index is not None and end_index <= len(assistant_prompt_message.content):
-                            assistant_prompt_message.content = (
-                                assistant_prompt_message.content[:end_index] +
-                                marker +
-                                assistant_prompt_message.content[end_index:]
-                            )
-
-            if reference_lines:
-                reference_lines.insert(0, "<ol>")
-                reference_lines.append("</ol>")
-                reference_section = "\n\nGrounding Sources\n" + "\n".join(reference_lines)
-                assistant_prompt_message.content += reference_section
-
         prompt_tokens = self.get_num_tokens(model, credentials, prompt_messages)
         completion_tokens = self.get_num_tokens(model, credentials, [assistant_prompt_message])
         usage = self._calc_response_usage(model, credentials, prompt_tokens, completion_tokens)
@@ -874,12 +829,10 @@ class VertexAiApaduaLargeLanguageModel(LargeLanguageModel):
                     # Extract grounding metadata if present
                     reference_lines = []
                     grounding_chunks = []
-                    grounding_supports = []
 
                     try:
                         if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
                             grounding_chunks = candidate.grounding_metadata.grounding_chunks or []
-                            grounding_supports = candidate.grounding_metadata.grounding_supports or []
                     except (AttributeError, TypeError):
                         pass
 
@@ -894,23 +847,6 @@ class VertexAiApaduaLargeLanguageModel(LargeLanguageModel):
                             except (AttributeError, TypeError):
                                 continue
 
-                    content_with_citations = assistant_prompt_message.content
-                    if grounding_supports:
-                        # Sort supports by end_index in descending order to insert markers without affecting earlier offsets
-                        sorted_supports = sorted(grounding_supports, key=lambda s: s.segment.end_index or 0, reverse=True)
-                        for support in sorted_supports:
-                            if support.grounding_chunk_indices:
-                                # Create citation markers like [1, 2]
-                                indices = [str(i + 1) for i in support.grounding_chunk_indices]
-                                marker = f" [{', '.join(indices)}]"
-                                end_index = support.segment.end_index
-                                if end_index is not None and end_index <= len(content_with_citations):
-                                    content_with_citations = (
-                                        content_with_citations[:end_index] +
-                                        marker +
-                                        content_with_citations[end_index:]
-                                    )
-
                     if reference_lines:
                         reference_lines.insert(0, "<ol>")
                         reference_lines.append("</ol>")
@@ -919,10 +855,10 @@ class VertexAiApaduaLargeLanguageModel(LargeLanguageModel):
                         reference_section = ""
 
                     if is_first_gemini2_response and model.startswith("gemini-2.") and system_instruction:
-                        integrated_text = f"{content_with_citations}"
+                        integrated_text = f"{assistant_prompt_message.content}"
                         is_first_gemini2_response = False
                     else:
-                        integrated_text = f"{content_with_citations}{reference_section}"
+                        integrated_text = f"{assistant_prompt_message.content}{reference_section}"
 
                     assistant_message_with_refs = AssistantPromptMessage(
                         content=integrated_text,
